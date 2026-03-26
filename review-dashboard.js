@@ -90,6 +90,37 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
   .upload-result a:hover { text-decoration: underline; }
   .btn-upload { background: #c0392b; color: #fff; padding: 12px 32px; font-size: 16px; }
   .btn-upload:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ── Google Business tab ── */
+  .gbp-header { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+  .gbp-header select { background: #1a1a1a; border: 1px solid #333; border-radius: 6px; padding: 8px 12px; color: #e0e0e0; font-size: 14px; min-width: 200px; }
+  .gbp-sub-tabs { display: flex; gap: 8px; margin-bottom: 20px; }
+  .gbp-sub-tab { padding: 6px 16px; background: #1a1a1a; border: 1px solid #333; border-radius: 20px; cursor: pointer; font-size: 13px; color: #888; }
+  .gbp-sub-tab.active { background: #c0392b; border-color: #c0392b; color: #fff; }
+  .review-card { margin-bottom: 16px; }
+  .review-stars { color: #f1c40f; font-size: 16px; letter-spacing: 2px; }
+  .review-text { margin: 10px 0; font-size: 14px; line-height: 1.5; }
+  .review-reply { background: #0f0f0f; border-left: 3px solid #27ae60; padding: 10px 14px; margin: 10px 0; font-size: 13px; color: #aaa; }
+  .review-reply .label { color: #27ae60; font-weight: 600; font-size: 12px; margin-bottom: 4px; }
+  .reply-input { display: flex; gap: 8px; margin-top: 10px; }
+  .reply-input textarea { flex: 1; min-height: 50px; }
+  .reply-input button { align-self: flex-end; }
+  .insight-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .insight-card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 8px; padding: 16px; text-align: center; }
+  .insight-number { font-size: 28px; font-weight: 700; color: #fff; }
+  .insight-label { font-size: 12px; color: #555; margin-top: 4px; }
+  .keyword-list { max-height: 400px; overflow-y: auto; }
+  .keyword-row { display: flex; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid #2a2a2a; font-size: 14px; }
+  .keyword-row:hover { background: #1a1a1a; }
+  .keyword-count { color: #888; font-size: 13px; }
+  .location-card { display: flex; align-items: center; gap: 16px; padding: 14px 18px; }
+  .location-icon { font-size: 24px; }
+  .location-info { flex: 1; }
+  .location-name { font-weight: 600; color: #fff; font-size: 15px; }
+  .location-address { color: #888; font-size: 13px; margin-top: 2px; }
+  .date-range { display: flex; align-items: center; gap: 8px; }
+  .date-range input[type="date"] { background: #1a1a1a; border: 1px solid #333; border-radius: 6px; padding: 6px 10px; color: #e0e0e0; font-size: 13px; }
+  .date-range input[type="date"]:focus { outline: none; border-color: #c0392b; }
 </style>
 </head>
 <body>
@@ -104,6 +135,7 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
   <div class="tab active" onclick="showTab('flagged')">Flagged for Review</div>
   <div class="tab" onclick="showTab('escalations')">Escalations</div>
   <div class="tab" onclick="showTab('upload')">Upload Video</div>
+  <div class="tab" onclick="showTab('gbp')">Google Business</div>
   <div class="tab" onclick="showTab('stats')">Learning Stats</div>
 </div>
 
@@ -192,6 +224,25 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
     </div>
   </div>
 
+  <div id="tab-gbp" style="display:none">
+    <br>
+    <div class="gbp-header">
+      <select id="gbp-location" onchange="onLocationChange()">
+        <option value="">Loading locations...</option>
+      </select>
+    </div>
+    <div class="gbp-sub-tabs">
+      <div class="gbp-sub-tab active" onclick="showGbpTab('reviews')">Reviews</div>
+      <div class="gbp-sub-tab" onclick="showGbpTab('insights')">Insights</div>
+      <div class="gbp-sub-tab" onclick="showGbpTab('keywords')">Search Keywords</div>
+      <div class="gbp-sub-tab" onclick="showGbpTab('locations')">All Locations</div>
+    </div>
+    <div id="gbp-reviews"><div class="empty-state"><div class="icon">💬</div><div>Select a location to view reviews</div></div></div>
+    <div id="gbp-insights" style="display:none"></div>
+    <div id="gbp-keywords" style="display:none"></div>
+    <div id="gbp-locations" style="display:none"></div>
+  </div>
+
   <div id="tab-stats" style="display:none">
     <br>
     <div id="stats-content">Loading...</div>
@@ -203,13 +254,14 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
 <script>
 const platformEmoji = { instagram:'📸', facebook:'👥', tiktok:'🎵', youtube:'▶️', twitter:'🐦' };
 
-const ALL_TABS = ['flagged','escalations','upload','stats'];
+const ALL_TABS = ['flagged','escalations','upload','gbp','stats'];
 function showTab(tab) {
   ALL_TABS.forEach(t => {
     document.getElementById('tab-' + t).style.display = t === tab ? 'block' : 'none';
     document.querySelectorAll('.tab')[ALL_TABS.indexOf(t)].classList.toggle('active', t === tab);
   });
   if (tab === 'escalations') loadEscalations();
+  if (tab === 'gbp' && gbpLocations.length === 0) initGbp();
   if (tab === 'stats') loadStats();
 }
 
@@ -376,6 +428,225 @@ async function loadStats() {
       </div>
     </div>\` : ''}
   \`;
+}
+
+// ── Google Business tab logic ──
+let gbpAccounts = [];
+let gbpLocations = [];
+let currentGbpTab = 'reviews';
+
+function showGbpTab(tab) {
+  currentGbpTab = tab;
+  ['reviews','insights','keywords','locations'].forEach(t => {
+    document.getElementById('gbp-' + t).style.display = t === tab ? 'block' : 'none';
+    document.querySelectorAll('.gbp-sub-tab')[['reviews','insights','keywords','locations'].indexOf(t)].classList.toggle('active', t === tab);
+  });
+  const loc = document.getElementById('gbp-location').value;
+  if (tab === 'reviews' && loc) loadGbpReviews(loc);
+  if (tab === 'insights' && loc) loadGbpInsights(loc);
+  if (tab === 'keywords' && loc) loadGbpKeywords(loc);
+  if (tab === 'locations') loadGbpLocations();
+}
+
+async function initGbp() {
+  try {
+    const res = await fetch('/api/gbp/accounts');
+    const data = await res.json();
+    if (data.error) { console.warn('GBP:', data.error); return; }
+    gbpAccounts = data.accounts || [];
+
+    // Load locations for all accounts
+    const select = document.getElementById('gbp-location');
+    select.innerHTML = '<option value="">Loading locations...</option>';
+    gbpLocations = [];
+
+    for (const acc of gbpAccounts) {
+      const locRes = await fetch('/api/gbp/locations?account=' + encodeURIComponent(acc.name));
+      const locData = await locRes.json();
+      if (locData.locations) {
+        gbpLocations.push(...locData.locations.map(l => ({ ...l, accountName: acc.name })));
+      }
+    }
+
+    if (gbpLocations.length === 0) {
+      select.innerHTML = '<option value="">No locations found</option>';
+      return;
+    }
+
+    select.innerHTML = gbpLocations.map(l => {
+      const title = l.title || l.name;
+      const addr = l.storefrontAddress?.addressLines?.[0] || '';
+      return '<option value="' + l.name + '" data-account="' + l.accountName + '">' + title + (addr ? ' — ' + addr : '') + '</option>';
+    }).join('');
+
+    onLocationChange();
+  } catch (err) {
+    console.warn('GBP init error:', err.message);
+  }
+}
+
+function onLocationChange() {
+  const loc = document.getElementById('gbp-location').value;
+  if (!loc) return;
+  if (currentGbpTab === 'reviews') loadGbpReviews(loc);
+  else if (currentGbpTab === 'insights') loadGbpInsights(loc);
+  else if (currentGbpTab === 'keywords') loadGbpKeywords(loc);
+}
+
+async function loadGbpReviews(locationName) {
+  const container = document.getElementById('gbp-reviews');
+  container.innerHTML = '<div style="color:#888;padding:20px">Loading reviews...</div>';
+
+  const opt = document.getElementById('gbp-location').selectedOptions[0];
+  const accountName = opt?.dataset?.account || '';
+
+  try {
+    const res = await fetch('/api/gbp/reviews?account=' + encodeURIComponent(accountName) + '&location=' + encodeURIComponent(locationName.split('/').pop()));
+    const data = await res.json();
+
+    if (data.error) { container.innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><div>' + data.error + '</div></div>'; return; }
+
+    const summary = '<div class="stats-grid" style="grid-template-columns:repeat(2,1fr);max-width:400px;margin-bottom:20px">' +
+      '<div class="stat-card"><div class="stat-number">' + (data.averageRating || '—') + '</div><div class="stat-label">Average Rating</div></div>' +
+      '<div class="stat-card"><div class="stat-number">' + (data.totalReviewCount || 0) + '</div><div class="stat-label">Total Reviews</div></div>' +
+      '</div>';
+
+    if (!data.reviews || data.reviews.length === 0) {
+      container.innerHTML = summary + '<div class="empty-state"><div class="icon">✨</div><div>No reviews yet</div></div>';
+      return;
+    }
+
+    container.innerHTML = summary + data.reviews.map(r => {
+      const stars = '★'.repeat(r.starRating === 'FIVE' ? 5 : r.starRating === 'FOUR' ? 4 : r.starRating === 'THREE' ? 3 : r.starRating === 'TWO' ? 2 : 1);
+      const emptyStars = '☆'.repeat(5 - stars.length);
+      const reviewId = r.reviewId || r.name?.split('/').pop() || '';
+      const hasReply = r.reviewReply?.comment;
+
+      return '<div class="card review-card" id="review-' + reviewId + '">' +
+        '<div class="card-header">' +
+          '<span class="author">' + (r.reviewer?.displayName || 'Anonymous') + '</span>' +
+          '<span class="review-stars">' + stars + emptyStars + '</span>' +
+          '<span class="time">' + timeAgo(r.createTime) + '</span>' +
+        '</div>' +
+        '<div class="card-body">' +
+          (r.comment ? '<div class="review-text">"' + r.comment + '"</div>' : '<div class="review-text" style="color:#555"><em>No written review</em></div>') +
+          (hasReply ? '<div class="review-reply"><div class="label">Your reply</div>' + r.reviewReply.comment + '</div>' : '') +
+          '<div class="reply-input">' +
+            '<textarea id="reply-' + reviewId + '" placeholder="Write a reply...">' + (hasReply ? r.reviewReply.comment : '') + '</textarea>' +
+            '<button class="btn-approve" onclick="sendGbpReply(\'' + reviewId + '\')">' + (hasReply ? 'Update' : 'Reply') + '</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  } catch (err) {
+    container.innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><div>Error: ' + err.message + '</div></div>';
+  }
+}
+
+async function sendGbpReply(reviewId) {
+  const text = document.getElementById('reply-' + reviewId)?.value?.trim();
+  if (!text) { showToast('Write a reply first', '#c0392b'); return; }
+
+  const opt = document.getElementById('gbp-location').selectedOptions[0];
+  const accountName = opt?.dataset?.account || '';
+  const locationName = document.getElementById('gbp-location').value;
+  const locationId = locationName.split('/').pop();
+
+  try {
+    const res = await fetch('/api/gbp/reply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account: accountName, location: locationId, reviewId, comment: text }),
+    });
+    const data = await res.json();
+    if (data.error) { showToast(data.error, '#c0392b'); return; }
+    showToast('Reply sent!');
+    loadGbpReviews(locationName);
+  } catch (err) {
+    showToast('Failed: ' + err.message, '#c0392b');
+  }
+}
+
+async function loadGbpInsights(locationName) {
+  const container = document.getElementById('gbp-insights');
+  container.innerHTML = '<div style="color:#888;padding:20px">Loading insights...</div>';
+
+  const now = new Date();
+  const start = new Date(now);
+  start.setDate(start.getDate() - 30);
+
+  try {
+    const params = new URLSearchParams({
+      location: locationName,
+      startYear: start.getFullYear(), startMonth: start.getMonth() + 1, startDay: start.getDate(),
+      endYear: now.getFullYear(), endMonth: now.getMonth() + 1, endDay: now.getDate(),
+    });
+    const res = await fetch('/api/gbp/insights?' + params);
+    const data = await res.json();
+
+    if (data.error) { container.innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><div>' + data.error + '</div></div>'; return; }
+
+    const labels = {
+      BUSINESS_IMPRESSIONS_DESKTOP_MAPS: 'Desktop Maps Views',
+      BUSINESS_IMPRESSIONS_DESKTOP_SEARCH: 'Desktop Search Views',
+      BUSINESS_IMPRESSIONS_MOBILE_MAPS: 'Mobile Maps Views',
+      BUSINESS_IMPRESSIONS_MOBILE_SEARCH: 'Mobile Search Views',
+      BUSINESS_DIRECTION_REQUESTS: 'Direction Requests',
+      CALL_CLICKS: 'Phone Calls',
+      WEBSITE_CLICKS: 'Website Clicks',
+    };
+
+    let html = '<h3 style="color:#fff;margin-bottom:16px">Last 30 Days</h3><div class="insight-grid">';
+    for (const [metric, values] of Object.entries(data)) {
+      const total = (values || []).reduce((sum, v) => sum + (parseInt(v.value) || 0), 0);
+      html += '<div class="insight-card"><div class="insight-number">' + total.toLocaleString() + '</div><div class="insight-label">' + (labels[metric] || metric) + '</div></div>';
+    }
+    html += '</div>';
+    container.innerHTML = html;
+  } catch (err) {
+    container.innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><div>Error: ' + err.message + '</div></div>';
+  }
+}
+
+async function loadGbpKeywords(locationName) {
+  const container = document.getElementById('gbp-keywords');
+  container.innerHTML = '<div style="color:#888;padding:20px">Loading search keywords...</div>';
+
+  const now = new Date();
+  try {
+    const res = await fetch('/api/gbp/keywords?location=' + encodeURIComponent(locationName) + '&year=' + now.getFullYear() + '&month=' + (now.getMonth() + 1));
+    const data = await res.json();
+
+    if (data.error) { container.innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><div>' + data.error + '</div></div>'; return; }
+    if (!data.keywords || data.keywords.length === 0) { container.innerHTML = '<div class="empty-state"><div class="icon">🔍</div><div>No keyword data for this month</div></div>'; return; }
+
+    let html = '<div class="card"><div class="card-header"><span style="font-weight:600">Search Keywords — ' + now.toLocaleString('default', { month: 'long', year: 'numeric' }) + '</span></div><div class="card-body keyword-list">';
+    const sorted = data.keywords.sort((a, b) => (b.insightsValue?.value || 0) - (a.insightsValue?.value || 0));
+    for (const kw of sorted) {
+      html += '<div class="keyword-row"><span>' + (kw.searchKeyword || '—') + '</span><span class="keyword-count">' + (kw.insightsValue?.value || 0) + ' impressions</span></div>';
+    }
+    html += '</div></div>';
+    container.innerHTML = html;
+  } catch (err) {
+    container.innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><div>Error: ' + err.message + '</div></div>';
+  }
+}
+
+function loadGbpLocations() {
+  const container = document.getElementById('gbp-locations');
+  if (gbpLocations.length === 0) {
+    container.innerHTML = '<div class="empty-state"><div class="icon">📍</div><div>No locations found</div></div>';
+    return;
+  }
+  container.innerHTML = gbpLocations.map(l => {
+    const addr = l.storefrontAddress;
+    const addrStr = addr ? [addr.addressLines?.join(', '), addr.locality, addr.administrativeArea, addr.postalCode].filter(Boolean).join(', ') : 'No address';
+    return '<div class="card"><div class="location-card">' +
+      '<div class="location-icon">📍</div>' +
+      '<div class="location-info"><div class="location-name">' + (l.title || l.name) + '</div><div class="location-address">' + addrStr + '</div></div>' +
+      (l.websiteUri ? '<a href="' + l.websiteUri + '" target="_blank" style="color:#c0392b;font-size:13px">Website →</a>' : '') +
+      '</div></div>';
+  }).join('');
 }
 
 // ── Upload tab logic ──
@@ -594,6 +865,83 @@ export function startReviewServer() {
         json(res, { ok: true });
         return;
       }
+    }
+
+    // ── Google Business Profile API routes ──
+    if (url.pathname === '/api/gbp/accounts' && req.method === 'GET') {
+      try {
+        const { listAccounts } = await import('../../google-business.js');
+        const accounts = await listAccounts();
+        json(res, { accounts });
+      } catch (err) {
+        json(res, { error: err.message });
+      }
+      return;
+    }
+
+    if (url.pathname === '/api/gbp/locations' && req.method === 'GET') {
+      try {
+        const { listLocations } = await import('../../google-business.js');
+        const account = url.searchParams.get('account');
+        const locations = await listLocations(account);
+        json(res, { locations });
+      } catch (err) {
+        json(res, { error: err.message });
+      }
+      return;
+    }
+
+    if (url.pathname === '/api/gbp/reviews' && req.method === 'GET') {
+      try {
+        const { listReviews } = await import('../../google-business.js');
+        const account = url.searchParams.get('account');
+        const location = url.searchParams.get('location');
+        const data = await listReviews(account, 'locations/' + location);
+        json(res, data);
+      } catch (err) {
+        json(res, { error: err.message });
+      }
+      return;
+    }
+
+    if (url.pathname === '/api/gbp/reply' && req.method === 'POST') {
+      try {
+        const body = await readBody(req);
+        const { replyToReview } = await import('../../google-business.js');
+        const result = await replyToReview(body.account, 'locations/' + body.location, body.reviewId, body.comment);
+        json(res, { ok: true, result });
+      } catch (err) {
+        json(res, { error: err.message });
+      }
+      return;
+    }
+
+    if (url.pathname === '/api/gbp/insights' && req.method === 'GET') {
+      try {
+        const { getPerformance } = await import('../../google-business.js');
+        const location = url.searchParams.get('location');
+        const startDate = { year: url.searchParams.get('startYear'), month: url.searchParams.get('startMonth'), day: url.searchParams.get('startDay') };
+        const endDate = { year: url.searchParams.get('endYear'), month: url.searchParams.get('endMonth'), day: url.searchParams.get('endDay') };
+        const data = await getPerformance(location, startDate, endDate);
+        json(res, data);
+      } catch (err) {
+        json(res, { error: err.message });
+      }
+      return;
+    }
+
+    if (url.pathname === '/api/gbp/keywords' && req.method === 'GET') {
+      try {
+        const { getSearchKeywords } = await import('../../google-business.js');
+        const location = url.searchParams.get('location');
+        const year = url.searchParams.get('year');
+        const month = url.searchParams.get('month');
+        const data = await getSearchKeywords(location, year, month);
+        json(res, { keywords: data });
+      } catch (err) {
+        json(res, { error: err.message });
+      }
+      return;
     }
 
     // ── Video upload (multipart) ──
