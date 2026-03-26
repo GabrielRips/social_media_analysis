@@ -1,5 +1,6 @@
 import { createServer } from 'http';
-import { readFileSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, unlinkSync, existsSync } from 'fs';
+import { join } from 'path';
 import { getInboxDb, getOpenEscalations } from '../../store/inbox-database.js';
 import { processCorrection } from './learning.js';
 
@@ -64,6 +65,31 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
   .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
   .toast { position: fixed; bottom: 24px; right: 24px; background: #27ae60; color: #fff; padding: 12px 20px; border-radius: 8px; font-weight: 600; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
   .toast.show { opacity: 1; }
+
+  /* ── Upload tab ── */
+  .upload-form { max-width: 640px; }
+  .upload-form label { display: block; font-size: 13px; color: #888; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .upload-form input[type="text"], .upload-form select { width: 100%; background: #0f0f0f; border: 1px solid #333; border-radius: 6px; padding: 10px 12px; color: #e0e0e0; font-size: 14px; font-family: inherit; margin-bottom: 16px; }
+  .upload-form input[type="text"]:focus, .upload-form select:focus, .upload-form textarea:focus { outline: none; border-color: #c0392b; }
+  .upload-form select { appearance: none; cursor: pointer; }
+  .upload-form .field-row { display: flex; gap: 16px; }
+  .upload-form .field-row > div { flex: 1; }
+  .drop-zone { border: 2px dashed #333; border-radius: 8px; padding: 40px; text-align: center; color: #555; cursor: pointer; transition: border-color 0.2s, background 0.2s; margin-bottom: 16px; }
+  .drop-zone:hover, .drop-zone.dragover { border-color: #c0392b; background: #1a0a0a; }
+  .drop-zone.has-file { border-color: #27ae60; background: #0a1a0a; }
+  .drop-zone .icon { font-size: 36px; margin-bottom: 8px; }
+  .drop-zone .filename { color: #27ae60; font-weight: 600; font-size: 15px; }
+  .drop-zone .filesize { color: #888; font-size: 13px; margin-top: 4px; }
+  .thumb-preview { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .thumb-preview img { width: 120px; height: 68px; object-fit: cover; border-radius: 4px; border: 1px solid #333; }
+  .progress-bar { width: 100%; height: 6px; background: #2a2a2a; border-radius: 3px; overflow: hidden; margin-bottom: 12px; display: none; }
+  .progress-bar .fill { height: 100%; background: #c0392b; transition: width 0.3s; width: 0%; }
+  .upload-status { font-size: 13px; color: #888; margin-bottom: 16px; display: none; }
+  .upload-result { background: #0a1a0a; border: 1px solid #27ae60; border-radius: 8px; padding: 16px; margin-top: 16px; display: none; }
+  .upload-result a { color: #c0392b; text-decoration: none; font-weight: 600; }
+  .upload-result a:hover { text-decoration: underline; }
+  .btn-upload { background: #c0392b; color: #fff; padding: 12px 32px; font-size: 16px; }
+  .btn-upload:disabled { opacity: 0.4; cursor: not-allowed; }
 </style>
 </head>
 <body>
@@ -77,6 +103,7 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
 <div class="tabs">
   <div class="tab active" onclick="showTab('flagged')">Flagged for Review</div>
   <div class="tab" onclick="showTab('escalations')">Escalations</div>
+  <div class="tab" onclick="showTab('upload')">Upload Video</div>
   <div class="tab" onclick="showTab('stats')">Learning Stats</div>
 </div>
 
@@ -89,6 +116,82 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
     <br>
     <div id="escalations-list">Loading...</div>
   </div>
+  <div id="tab-upload" style="display:none">
+    <br>
+    <div class="upload-form">
+      <div class="card">
+        <div class="card-header"><span style="font-weight:600">Upload to YouTube</span></div>
+        <div class="card-body">
+
+          <label>Video File</label>
+          <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+            <div class="icon">🎬</div>
+            <div>Drag & drop a video here, or click to browse</div>
+            <div style="font-size:12px;margin-top:6px;color:#444">MP4, MOV, AVI, WMV, FLV, WebM — max 128 GB</div>
+          </div>
+          <input type="file" id="file-input" accept="video/*" style="display:none" />
+
+          <label>Title</label>
+          <input type="text" id="upload-title" maxlength="100" placeholder="Video title (max 100 characters)" />
+
+          <label>Description</label>
+          <textarea id="upload-desc" rows="4" placeholder="Video description..."></textarea>
+
+          <div class="field-row">
+            <div>
+              <label>Privacy</label>
+              <select id="upload-privacy">
+                <option value="private">Private — Only you</option>
+                <option value="unlisted">Unlisted — Anyone with link</option>
+                <option value="public">Public — Everyone</option>
+              </select>
+            </div>
+            <div>
+              <label>Category</label>
+              <select id="upload-category">
+                <option value="22">People & Blogs</option>
+                <option value="26">How-to & Style</option>
+                <option value="19">Travel & Events</option>
+                <option value="24">Entertainment</option>
+                <option value="1">Film & Animation</option>
+                <option value="2">Autos & Vehicles</option>
+                <option value="10">Music</option>
+                <option value="15">Pets & Animals</option>
+                <option value="17">Sports</option>
+                <option value="20">Gaming</option>
+                <option value="23">Comedy</option>
+                <option value="25">News & Politics</option>
+                <option value="27">Education</option>
+                <option value="28">Science & Technology</option>
+              </select>
+            </div>
+          </div>
+
+          <label>Tags (comma-separated)</label>
+          <input type="text" id="upload-tags" placeholder="bbq, food, melbourne, thirdwavebbq" />
+
+          <label>Custom Thumbnail (optional)</label>
+          <div class="thumb-preview" id="thumb-preview" style="display:none">
+            <img id="thumb-img" />
+            <button class="btn-ignore" onclick="clearThumb()">Remove</button>
+          </div>
+          <input type="file" id="thumb-input" accept="image/*" style="margin-bottom:16px" />
+
+          <div class="progress-bar" id="progress-bar"><div class="fill" id="progress-fill"></div></div>
+          <div class="upload-status" id="upload-status"></div>
+
+          <button class="btn-upload" id="btn-upload" onclick="startUpload()">Upload to YouTube</button>
+
+          <div class="upload-result" id="upload-result">
+            <div style="font-size:16px;font-weight:600;margin-bottom:8px">Video uploaded!</div>
+            <div id="upload-result-body"></div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="tab-stats" style="display:none">
     <br>
     <div id="stats-content">Loading...</div>
@@ -100,10 +203,11 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
 <script>
 const platformEmoji = { instagram:'📸', facebook:'👥', tiktok:'🎵', youtube:'▶️', twitter:'🐦' };
 
+const ALL_TABS = ['flagged','escalations','upload','stats'];
 function showTab(tab) {
-  ['flagged','escalations','stats'].forEach(t => {
+  ALL_TABS.forEach(t => {
     document.getElementById('tab-' + t).style.display = t === tab ? 'block' : 'none';
-    document.querySelectorAll('.tab')[['flagged','escalations','stats'].indexOf(t)].classList.toggle('active', t === tab);
+    document.querySelectorAll('.tab')[ALL_TABS.indexOf(t)].classList.toggle('active', t === tab);
   });
   if (tab === 'escalations') loadEscalations();
   if (tab === 'stats') loadStats();
@@ -274,6 +378,136 @@ async function loadStats() {
   \`;
 }
 
+// ── Upload tab logic ──
+let selectedFile = null;
+
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+const thumbInput = document.getElementById('thumb-input');
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  if (e.dataTransfer.files.length) setFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', () => { if (fileInput.files.length) setFile(fileInput.files[0]); });
+
+function setFile(f) {
+  selectedFile = f;
+  dropZone.classList.add('has-file');
+  const mb = (f.size / 1024 / 1024).toFixed(1);
+  dropZone.innerHTML = '<div class="icon">🎬</div><div class="filename">' + f.name + '</div><div class="filesize">' + mb + ' MB</div>';
+  if (!document.getElementById('upload-title').value) {
+    document.getElementById('upload-title').value = f.name.replace(/\\.[^.]+$/, '');
+  }
+}
+
+thumbInput.addEventListener('change', () => {
+  if (thumbInput.files.length) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      document.getElementById('thumb-img').src = e.target.result;
+      document.getElementById('thumb-preview').style.display = 'flex';
+    };
+    reader.readAsDataURL(thumbInput.files[0]);
+  }
+});
+
+function clearThumb() {
+  thumbInput.value = '';
+  document.getElementById('thumb-preview').style.display = 'none';
+}
+
+async function startUpload() {
+  if (!selectedFile) { showToast('Select a video file first', '#c0392b'); return; }
+  const title = document.getElementById('upload-title').value.trim();
+  if (!title) { showToast('Title is required', '#c0392b'); return; }
+
+  const btn = document.getElementById('btn-upload');
+  const bar = document.getElementById('progress-bar');
+  const fill = document.getElementById('progress-fill');
+  const status = document.getElementById('upload-status');
+  const result = document.getElementById('upload-result');
+
+  btn.disabled = true;
+  btn.textContent = 'Uploading...';
+  bar.style.display = 'block';
+  status.style.display = 'block';
+  result.style.display = 'none';
+  status.textContent = 'Uploading video to server...';
+  fill.style.width = '10%';
+
+  const formData = new FormData();
+  formData.append('video', selectedFile);
+  formData.append('title', title);
+  formData.append('description', document.getElementById('upload-desc').value);
+  formData.append('privacy', document.getElementById('upload-privacy').value);
+  formData.append('category', document.getElementById('upload-category').value);
+  formData.append('tags', document.getElementById('upload-tags').value);
+  if (thumbInput.files.length) formData.append('thumbnail', thumbInput.files[0]);
+
+  try {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/upload-video');
+
+    xhr.upload.onprogress = e => {
+      if (e.lengthComputable) {
+        const pct = Math.round((e.loaded / e.total) * 70) + 10; // 10-80% for upload to server
+        fill.style.width = pct + '%';
+        const mb = (e.loaded / 1024 / 1024).toFixed(1);
+        const total = (e.total / 1024 / 1024).toFixed(1);
+        status.textContent = 'Uploading to server: ' + mb + ' / ' + total + ' MB';
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status === 200) {
+        const data = JSON.parse(xhr.responseText);
+        fill.style.width = '100%';
+        status.textContent = 'Complete!';
+        result.style.display = 'block';
+        document.getElementById('upload-result-body').innerHTML =
+          '<div>Video ID: <strong>' + data.videoId + '</strong></div>' +
+          '<div style="margin-top:8px"><a href="https://youtu.be/' + data.videoId + '" target="_blank">Watch on YouTube →</a></div>' +
+          '<div style="margin-top:4px;color:#888;font-size:13px">Status: ' + data.privacyStatus + '</div>';
+        showToast('Video uploaded!');
+      } else {
+        let msg = 'Upload failed';
+        try { msg = JSON.parse(xhr.responseText).error || msg; } catch {}
+        status.textContent = msg;
+        showToast(msg, '#c0392b');
+      }
+      btn.disabled = false;
+      btn.textContent = 'Upload to YouTube';
+    };
+
+    xhr.onerror = () => {
+      status.textContent = 'Network error — check connection';
+      showToast('Upload failed', '#c0392b');
+      btn.disabled = false;
+      btn.textContent = 'Upload to YouTube';
+    };
+
+    xhr.send(formData);
+
+    // Simulate YouTube processing phase after server receives file
+    setTimeout(() => {
+      if (fill.style.width !== '100%') {
+        fill.style.width = '85%';
+        status.textContent = 'Uploading to YouTube...';
+      }
+    }, 2000);
+
+  } catch (err) {
+    status.textContent = 'Error: ' + err.message;
+    showToast('Upload failed: ' + err.message, '#c0392b');
+    btn.disabled = false;
+    btn.textContent = 'Upload to YouTube';
+  }
+}
+
 // Load on boot
 loadFlagged();
 </script>
@@ -362,6 +596,54 @@ export function startReviewServer() {
       }
     }
 
+    // ── Video upload (multipart) ──
+    if (url.pathname === '/api/upload-video' && req.method === 'POST') {
+      try {
+        const { fields, files } = await parseMultipart(req);
+        if (!files.video) {
+          res.writeHead(400);
+          json(res, { error: 'No video file provided' });
+          return;
+        }
+
+        const tmpDir = join(process.cwd(), 'tmp-uploads');
+        if (!existsSync(tmpDir)) mkdirSync(tmpDir, { recursive: true });
+
+        const videoPath = join(tmpDir, 'upload-' + Date.now() + '-' + files.video.filename);
+        writeFileSync(videoPath, files.video.data);
+
+        let thumbnailPath = null;
+        if (files.thumbnail) {
+          thumbnailPath = join(tmpDir, 'thumb-' + Date.now() + '-' + files.thumbnail.filename);
+          writeFileSync(thumbnailPath, files.thumbnail.data);
+        }
+
+        const { uploadVideo } = await import('../../youtube-upload.js');
+        const tags = fields.tags ? fields.tags.split(',').map(t => t.trim()).filter(Boolean) : [];
+
+        const result = await uploadVideo({
+          filePath: videoPath,
+          title: fields.title || 'Untitled',
+          description: fields.description || '',
+          tags,
+          categoryId: fields.category || '22',
+          privacyStatus: fields.privacy || 'private',
+          thumbnailPath,
+        });
+
+        // Clean up temp files
+        try { unlinkSync(videoPath); } catch {}
+        if (thumbnailPath) try { unlinkSync(thumbnailPath); } catch {}
+
+        json(res, { ok: true, videoId: result.id, privacyStatus: result.status?.privacyStatus || fields.privacy });
+      } catch (err) {
+        console.error('Upload error:', err.message);
+        res.writeHead(500);
+        json(res, { error: err.message });
+      }
+      return;
+    }
+
     res.writeHead(404); res.end('Not found');
   });
 
@@ -384,5 +666,65 @@ async function readBody(req) {
     req.on('end', () => {
       try { resolve(JSON.parse(body)); } catch { resolve({}); }
     });
+  });
+}
+
+async function parseMultipart(req) {
+  return new Promise((resolve, reject) => {
+    const contentType = req.headers['content-type'] || '';
+    const boundaryMatch = contentType.match(/boundary=(.+)/);
+    if (!boundaryMatch) return reject(new Error('No multipart boundary'));
+
+    const boundary = boundaryMatch[1];
+    const chunks = [];
+
+    req.on('data', chunk => chunks.push(chunk));
+    req.on('end', () => {
+      const buf = Buffer.concat(chunks);
+      const fields = {};
+      const files = {};
+
+      const boundaryBuf = Buffer.from('--' + boundary);
+      const parts = [];
+      let start = 0;
+
+      while (true) {
+        const idx = buf.indexOf(boundaryBuf, start);
+        if (idx === -1) break;
+        if (start > 0) {
+          // Strip leading \r\n and trailing \r\n before boundary
+          let partStart = start;
+          let partEnd = idx - 2; // remove trailing \r\n
+          if (partEnd > partStart) parts.push(buf.subarray(partStart, partEnd));
+        }
+        start = idx + boundaryBuf.length;
+        // Skip \r\n or -- after boundary
+        if (buf[start] === 0x2d && buf[start + 1] === 0x2d) break; // end boundary --
+        if (buf[start] === 0x0d && buf[start + 1] === 0x0a) start += 2;
+      }
+
+      for (const part of parts) {
+        const headerEnd = part.indexOf('\r\n\r\n');
+        if (headerEnd === -1) continue;
+
+        const headerStr = part.subarray(0, headerEnd).toString();
+        const body = part.subarray(headerEnd + 4);
+
+        const nameMatch = headerStr.match(/name="([^"]+)"/);
+        const filenameMatch = headerStr.match(/filename="([^"]+)"/);
+        const name = nameMatch ? nameMatch[1] : null;
+
+        if (!name) continue;
+
+        if (filenameMatch) {
+          files[name] = { filename: filenameMatch[1], data: body };
+        } else {
+          fields[name] = body.toString();
+        }
+      }
+
+      resolve({ fields, files });
+    });
+    req.on('error', reject);
   });
 }
