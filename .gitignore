@@ -1,0 +1,8 @@
+node_modules/
+.env
+*.db
+*.db-wal
+*.db-shm
+service-account.json
+keys.txt
+twb-social-agent-key.json

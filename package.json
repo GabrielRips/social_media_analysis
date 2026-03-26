@@ -1,0 +1,24 @@
+{
+  "name": "twb-social-agent",
+  "version": "1.0.0",
+  "description": "Third Wave BBQ — Social media inbox agent with auto-response, learning, and analytics",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "run-now": "node index.js --run-now",
+    "test-fetch": "node index.js --test-fetch",
+    "test-report": "node index.js --test-report",
+    "init-db": "node store/inbox-database.js --init-inbox"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "axios": "^1.7.0",
+    "better-sqlite3": "^11.7.0",
+    "chalk": "^5.3.0",
+    "dayjs": "^1.11.13",
+    "dotenv": "^16.4.7",
+    "googleapis": "^144.0.0",
+    "node-cron": "^3.0.3"
+  }
+}
