@@ -9,7 +9,8 @@
     "run-now": "node index.js --run-now",
     "test-fetch": "node index.js --test-fetch",
     "test-report": "node index.js --test-report",
-    "init-db": "node store/inbox-database.js --init-inbox"
+    "init-db": "node store/inbox-database.js --init-inbox",
+    "upload": "node youtube-upload.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

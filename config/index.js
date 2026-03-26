@@ -24,6 +24,9 @@ export const config = {
     channelId: process.env.YOUTUBE_CHANNEL_ID || '',
     serviceAccountEmail: process.env.YOUTUBE_SERVICE_ACCOUNT_EMAIL || '',
     serviceAccountKey: process.env.YOUTUBE_SERVICE_ACCOUNT_KEY || '',
+    clientId: process.env.YOUTUBE_CLIENT_ID || '',
+    clientSecret: process.env.YOUTUBE_CLIENT_SECRET || '',
+    refreshToken: process.env.YOUTUBE_REFRESH_TOKEN || '',
   },
 
   twitter: {

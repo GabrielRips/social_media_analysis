@@ -6,7 +6,7 @@ import { URL } from 'url';
 const CLIENT_ID = process.env.YOUTUBE_CLIENT_ID;
 const CLIENT_SECRET = process.env.YOUTUBE_CLIENT_SECRET;
 const REDIRECT_URI = 'https://social.thirdwavebbq.com.au:3457/oauth/callback';
-const SCOPES = 'https://www.googleapis.com/auth/youtube.force-ssl';
+const SCOPES = 'https://www.googleapis.com/auth/youtube.force-ssl https://www.googleapis.com/auth/youtube.upload';
 
 const authUrl = 'https://accounts.google.com/o/oauth2/v2/auth'
   + '?client_id=' + CLIENT_ID
